@@ -29,7 +29,7 @@ bash
 
    
 bash
-   go build -o monitor
+   go build -o monitor main.go
    
 
 ## Configuration
