@@ -1,109 +1,75 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 )
 
-type Config struct {
-	BotToken       string
-	ChatID         string
-	HealthURL      string
-	Message        string
-	ExpectedStatus string
-}
+func main() {
+	botToken := flag.String("bot_token", "", "Telegram Bot Token")
+	chatID := flag.String("chat_id", "", "Telegram Chat ID")
+	healthURL := flag.String("health_url", "", "Health Check URL")
+	message := flag.String("message", "⚠️ *Attention!* The server is not responding properly.", "Error message to send")
+	expectedStatus := flag.String("expected_status", "OK", "Expected status response")
+	timeout := flag.Int("timeout", 5, "HTTP client timeout in seconds")
 
-type HealthResponse struct {
-	Status string `json:"status"`
-}
-
-func loadConfig() Config {
-	botToken := flag.String("bot_token", "000", "Telegram Bot Token")
-	chatID := flag.String("chat_id", "000", "Telegram Chat ID")
-	healthURL := flag.String("health_url", "http://0.0.0.0:8080/health", "Health Check URL")
-	message := flag.String("message", "⚠️ *Внимание!* Сервер не отвечает должным образом.", "Telegram Message")
-	expectedStatus := flag.String("expected_status", "OK", "Expected status from Health Check")
 	flag.Parse()
-	return Config{
-		BotToken:       *botToken,
-		ChatID:         *chatID,
-		HealthURL:      *healthURL,
-		Message:        *message,
-		ExpectedStatus: *expectedStatus,
-	}
-}
 
-func sendTelegramMessage(config Config, message string) error {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", config.BotToken)
-	payload := map[string]interface{}{
-		"chat_id":    config.ChatID,
-		"text":       message,
-		"parse_mode": "Markdown",
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
 	client := &http.Client{
-		timeout: 10 * time.Second,
+		Timeout: time.Duration(*timeout) * time.Second,
 	}
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(payloadBytes))
+
+	resp, err := client.Get(*healthURL)
 	if err != nil {
-		return err
+		sendTelegramMessage(*botToken, *chatID, *message)
+		log.Fatalf("Error fetching health URL: %v", err)
 	}
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		sendTelegramMessage(*botToken, *chatID, *message)
+		log.Fatalf("Error reading response body: %v", err)
 	}
-	fmt.Println(string(body), url, config.BotToken)
-	return nil
+
+	status := strings.TrimSpace(string(body))
+	if status != *expectedStatus {
+		sendTelegramMessage(*botToken, *chatID, *message)
+		log.Fatalf("Unexpected status: got %s, expected %s", status, *expectedStatus)
+	}
+
+	fmt.Println("Server is healthy.")
 }
 
-func checkServer(config Config) error {
-	client := &http.Client{
-		timeout: 10 * time.Second,
-	}
-	resp, err := client.Get(config.HealthURL)
+func sendTelegramMessage(botToken, chatID, message string) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	payload := fmt.Sprintf(`{"chat_id":"%s","text":"%s","parse_mode":"Markdown"}`, chatID, message)
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("ошибка при обращении к серверу: %v", err)
+		log.Printf("Error creating Telegram request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error sending Telegram message: %v", err)
+		return
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("получен некорректный HTTP статус: %s", resp.Status)
-	}
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("ошибка при чтении ответа сервера: %v", err)
-	}
-	var healthResp HealthResponse
-	err = json.Unmarshal(bodyBytes, &healthResp)
-	if err != nil {
-		return fmt.Errorf("ошибка при разборе JSON ответа: %v", err)
-	}
-	if healthResp.Status != config.ExpectedStatus {
-		return fmt.Errorf("статус здоровья не %s: %s", config.ExpectedStatus, healthResp.Status)
-	}
-	return nil
-}
 
-func main() {
-	config := loadConfig()
-	err := checkServer(config)
-	if err != nil {
-		errMsg := fmt.Sprintf("%sn*Ошибка:* %s", config.Message, err.Error())
-		sendErr := sendTelegramMessage(config, errMsg)
-		if sendErr != nil {
-			fmt.Fprintf(os.Stderr, "Не удалось отправить сообщение в Telegram: %vn", sendErr)
-		}
-		os.Exit(1)
-	} else {
-		fmt.Println("✅ Сервер работает нормально.")
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Printf("Non-OK response from Telegram: %s", string(body))
 	}
 }
