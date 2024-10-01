@@ -20,17 +20,17 @@ This tool is written in Go and is designed to monitor the status of a server. If
 1. *Clone the repository:*
 
    
-bash
+```bash
    git clone https://github.com/your-username/monitoring-telegram.git
    cd monitoring-telegram
-   
+```   
 
 2. *Build the application:*
 
    
-bash
+```bash
    go build -o monitor main.go
-   
+```   
 
 ## Configuration
 
@@ -48,14 +48,14 @@ The application accepts the following parameters via the command line:
 
 After building the application, you can run it with the necessary parameters. Below is an example of how to use it:
 
-bash
+```bash
 ./monitor 
   -bot_token "YOUR_TELEGRAM_BOT_TOKEN" 
   -chat_id "YOUR_CHAT_ID" 
   -health_url "http://yourserver.com/health" 
   -message "⚠️ Attention! The server is not responding properly." 
   -expected_status "OK"
-
+```
 ### Parameter Descriptions:
 
 - `-bot_token`: The token of your Telegram bot, which can be obtained through [BotFather](https://t.me/BotFather).
@@ -70,13 +70,14 @@ Suppose you have a server with a health check endpoint at `http://example.com/he
 
 Running the application would look like this:
 
-bash
+```bash
 ./monitor 
   -bot_token "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" 
   -chat_id "123456789" 
   -health_url "http://example.com/health" 
   -message "⚠️ Attention! The server is not responding properly." 
   -expected_status "OK"
+```
 
 If the endpoint `http://example.com/health` does not return the status `OK` or is unavailable, a warning message will be sent to the specified Telegram chat.
 
